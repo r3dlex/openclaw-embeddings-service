@@ -36,26 +36,22 @@ jobs:
         with:
           version: "0.11.19"
           enable-cache: true
-          cache-dependency-glob: "openclaw-embeddings-service/uv.lock"
+          cache-dependency-glob: "uv.lock"
 
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
       - name: Sync deps
-        working-directory: openclaw-embeddings-service
         run: uv sync --frozen
 
       - name: Lint (ruff)
-        working-directory: openclaw-embeddings-service
         run: |
           uv run ruff check server.py tests/
 
       - name: Run tests (with coverage)
-        working-directory: openclaw-embeddings-service
         run: uv run pytest --cov=. --cov-report=term-missing -v
 
       - name: Coverage ratchet check
-        working-directory: openclaw-embeddings-service
         run: |
           # Parse the TOTAL line from pytest-cov output.
           PCT=$(uv run pytest --cov=. --cov-report=term -q 2>&1 \
@@ -79,7 +75,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build image
-        run: docker build -t openclaw-embeddings:test openclaw-embeddings-service/
+        run: docker build -t openclaw-embeddings:test .
       - name: Healthcheck
         run: |
           docker run --rm -d --name embed-test -p 8080:8080 openclaw-embeddings:test
