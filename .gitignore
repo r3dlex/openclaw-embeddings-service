@@ -1,0 +1,53 @@
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+credentials/
+secrets/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+
+# Test / Coverage
+.coverage
+.coverage.*
+.pytest_cache/
+htmlcov/
+coverage.xml
+*.cover
+
+# .coverage_baseline IS tracked (RALPLAN F3 coverage ratchet file).
+# It is the floor for CI coverage; intentionally committed so the
+# ratchet value is reviewable in PR diffs.
+
+# uv-managed workspace (uv.lock is COMMITTED — RALPLAN AC-P2)
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.code-workspace
+*.swp
+*.swo
+*~
+
+# Docker
+/models
+
+# OMC session state
+# (keep plans tracked in git; ignore everything else in .omc/)
+.omc/*
+!.omc/plans/

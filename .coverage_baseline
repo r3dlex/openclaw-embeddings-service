@@ -1,0 +1,15 @@
+# .coverage_baseline — coverage ratchet (RALPLAN §1.4 F3 mitigation)
+#
+# This file is the floor for test coverage. The CI ratchet check
+# (added in sub-PR 2) reads the line-coverage % from `uv run
+# pytest --cov=. --cov-report=term` and FAILS the build if
+# coverage drops below the number below.
+#
+# Sub-PR 3 turned on the 90% hard gate (`--cov-fail-under=90` in
+# pyproject.toml). The .coverage_baseline ratchet remains as a higher
+# floor (currently 99) — coverage must be >= BOTH 90% (gate) and 99%
+# (ratchet). New code that drops coverage below the ratchet must
+# update this file with a justification, per RALPLAN §1.1 Principle 4.
+
+current_pct = 99
+justification = "sub-PR 3: 22 unit tests, 99% coverage (server.py 95% lines 87-88 are __main__ block; tests 100%)."

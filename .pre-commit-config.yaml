@@ -1,0 +1,21 @@
+# .pre-commit-config.yaml — openclaw-embeddings-service
+# Variant 3-PR sequence sub-PR 2 (RALPLAN §4.3 Wave 2.PY.C, F3).
+# Sub-PR 2 wires up pre-commit; sub-PR 3 turns on the 90% coverage gate.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.13
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        files: ^(server\.py|tests/.*\.py)$
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=500]

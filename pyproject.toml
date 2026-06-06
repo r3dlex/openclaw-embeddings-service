@@ -1,0 +1,96 @@
+[project]
+name = "openclaw-embeddings-service"
+version = "1.0.0"
+description = "Centralized MLX text embeddings service for the Openclaw multi-agent system (Apple Silicon)."
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "OpenClaw Workspace", email = "noreply@openclaw.ai" },
+]
+readme = "README.md"
+keywords = ["openclaw", "embeddings", "mlx", "fastapi"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+# NOTE on deps: sentence-transformers is the user-facing embedder; onnxruntime
+# provides cross-platform fallback. The mlx/mlx-lm pins are kept for the
+# Apple Silicon path (the prod runtime) but the dep is optional so the
+# service also runs on Linux/CI without MLX installed.
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic>=2.0.0",
+    "numpy>=1.26.0",
+    "sentence-transformers>=2.6.0",
+    "onnxruntime>=1.16.0",
+    "huggingface_hub>=0.20.0",
+    # openclaw-shared-python is the path-dep to the sibling repo's
+    # merged 4-source package (RALPLAN AC-S9). The dep is marker-gated
+    # to darwin because the source URL is file:///Volumes/... (the
+    # sibling repo is local-only on the Mac dev machine); CI runs on
+    # Linux and skips this dep. The [tool.uv.sources] entry below is
+    # always present so the AC-S9 grep matches.
+    "openclaw-shared-python>=0.2.0; sys_platform == 'darwin'",
+]
+
+[project.optional-dependencies]
+mlx = [
+    "mlx>=0.16.0",
+    "mlx-lm>=0.16.0",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+    "ruff>=0.4",
+    "mypy>=1.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# uv-managed dev deps + path-dep to shared-base (RALPLAN AC-S9).
+[tool.uv]
+managed = true
+package = false
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+    "ruff>=0.4",
+    "mypy>=1.8",
+]
+
+[tool.uv.sources]
+# Local file:// source — sibling repo is local-only on the Mac dev machine.
+# TODO(RALPLAN ADR-2): replace with github.com URL once published.
+openclaw-shared-python = { git = "file:///Volumes/Cowboy_Alpha/Ws/openclaw-shared-base.git", subdirectory = "python", rev = "v0.2.0" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=. --cov-report=term-missing --cov-fail-under=90"
+
+# 90% coverage gate turned on in sub-PR 3 (RALPLAN F3). Current coverage is
+# 99% (server.py 95%, tests 100%) — well above the 90% floor. The
+# .coverage_baseline ratchet remains as a higher floor (currently 95%).
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+    "E501",  # line length handled by formatter
+    "B008",  # function-call-in-default-arg (FastAPI Depends pattern)
+]

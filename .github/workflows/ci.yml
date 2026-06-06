@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # ── uv-managed: unit tests + coverage ratchet ────────────────────
+  # Variant 3-PR sequence (RALPLAN §4.3 Wave 2.PY.C):
+  #   sub-PR 1: scaffold tests + uv + path-dep + .coverage_baseline
+  #   sub-PR 2: pre-commit + make ci + branch protection (no 90% yet)
+  #   sub-PR 3: turn on 90% gate + tracking issue + sub-PR closure
+  #
+  # Sub-PR 3 turned on the 90% hard gate via pyproject.toml addopts.
+  # The pytest-cov command below inherits the addopts; the ratchet
+  # check (coverage >= .coverage_baseline) runs as a separate step.
+  tests:
+    name: Tests + coverage ratchet
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.19"
+          enable-cache: true
+          cache-dependency-glob: "openclaw-embeddings-service/uv.lock"
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Sync deps
+        working-directory: openclaw-embeddings-service
+        run: uv sync --frozen
+
+      - name: Lint (ruff)
+        working-directory: openclaw-embeddings-service
+        run: |
+          uv run ruff check server.py tests/
+
+      - name: Run tests (with coverage)
+        working-directory: openclaw-embeddings-service
+        run: uv run pytest --cov=. --cov-report=term-missing -v
+
+      - name: Coverage ratchet check
+        working-directory: openclaw-embeddings-service
+        run: |
+          # Parse the TOTAL line from pytest-cov output.
+          PCT=$(uv run pytest --cov=. --cov-report=term -q 2>&1 \
+            | grep -E '^TOTAL\s+[0-9]+\s+[0-9]+\s+([0-9]+)%' \
+            | awk '{print $4}' | tr -d '%')
+          if [ -z "$PCT" ]; then
+            echo "ERROR: could not parse coverage from pytest output"
+            exit 1
+          fi
+          BASELINE=$(grep '^current_pct' .coverage_baseline | awk -F'= ' '{print $2}')
+          echo "Coverage: ${PCT}% (baseline: ${BASELINE}%)"
+          if [ "$PCT" -lt "$BASELINE" ]; then
+            echo "ERROR: coverage ${PCT}% is below the .coverage_baseline ratchet (${BASELINE}%)"
+            echo "If this is a justified drop, update .coverage_baseline with a comment."
+            exit 1
+          fi
+
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t openclaw-embeddings:test openclaw-embeddings-service/
+      - name: Healthcheck
+        run: |
+          docker run --rm -d --name embed-test -p 8080:8080 openclaw-embeddings:test
+          sleep 5
+          curl -s http://localhost:8080/health || (docker logs embed-test && exit 1)
+          docker stop embed-test
