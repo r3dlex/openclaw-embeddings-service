@@ -19,9 +19,10 @@ jobs:
   # Sub-PR 3 turned on the 90% hard gate via pyproject.toml addopts.
   # The pytest-cov command below inherits the addopts; the ratchet
   # check (coverage >= .coverage_baseline) runs as a separate step.
-  tests:
-    name: Tests + coverage ratchet
-    runs-on: ubuntu-latest
+  _tests-self-hosted:
+    name: "Tests + coverage ratchet (self-hosted)"
+    runs-on: [self-hosted, ubuntu-latest]
+    timeout-minutes: 30
     strategy:
       matrix:
         python-version: ["3.11", "3.12"]
@@ -69,14 +70,115 @@ jobs:
             exit 1
           fi
 
-  docker-build:
-    name: Docker Build
+  _tests-gate:
+    name: "Tests + coverage ratchet (gate)"
+    needs: _tests-self-hosted
+    if: always()
     runs-on: ubuntu-latest
+    outputs:
+      passed: ${{ steps.mark.outputs.passed }}
+    steps:
+      - id: mark
+        if: needs._tests-self-hosted.result == 'success'
+        run: echo "passed=true" >> "$GITHUB_OUTPUT"
+
+  tests:
+    name: Tests + coverage ratchet
+    needs: _tests-gate
+    if: always()
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Route
+        run: echo "self-hosted passed=${{ needs._tests-gate.outputs.passed }}"
+
+      - uses: actions/checkout@v4
+        if: needs._tests-gate.outputs.passed != 'true'
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        if: needs._tests-gate.outputs.passed != 'true'
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.19"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python ${{ matrix.python-version }}
+        if: needs._tests-gate.outputs.passed != 'true'
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Sync deps
+        if: needs._tests-gate.outputs.passed != 'true'
+        run: uv sync --frozen
+
+      - name: Lint (ruff)
+        if: needs._tests-gate.outputs.passed != 'true'
+        run: |
+          uv run ruff check server.py tests/
+
+      - name: Run tests (with coverage)
+        if: needs._tests-gate.outputs.passed != 'true'
+        run: uv run pytest --cov=. --cov-report=term-missing -v
+
+      - name: Coverage ratchet check
+        if: needs._tests-gate.outputs.passed != 'true'
+        run: |
+          # Parse the TOTAL line from pytest-cov output.
+          PCT=$(uv run pytest --cov=. --cov-report=term -q 2>&1 \
+            | grep -E '^TOTAL\s+[0-9]+\s+[0-9]+\s+([0-9]+)%' \
+            | awk '{print $4}' | tr -d '%')
+          if [ -z "$PCT" ]; then
+            echo "ERROR: could not parse coverage from pytest output"
+            exit 1
+          fi
+          BASELINE=$(grep '^current_pct' .coverage_baseline | awk -F'= ' '{print $2}')
+          echo "Coverage: ${PCT}% (baseline: ${BASELINE}%)"
+          if [ "$PCT" -lt "$BASELINE" ]; then
+            echo "ERROR: coverage ${PCT}% is below the .coverage_baseline ratchet (${BASELINE}%)"
+            echo "If this is a justified drop, update .coverage_baseline with a comment."
+            exit 1
+          fi
+
+  _docker-build-self-hosted:
+    name: "Docker Build (self-hosted)"
+    runs-on: [self-hosted, ubuntu-latest]
+    continue-on-error: true
+    outputs:
+      passed: ${{ steps.mark.outputs.passed }}
     steps:
       - uses: actions/checkout@v4
       - name: Build image
         run: docker build -t openclaw-embeddings:test .
       - name: Healthcheck
+        run: |
+          docker run --rm -d --name embed-test -p 8080:8080 openclaw-embeddings:test
+          sleep 5
+          curl -s http://localhost:8080/health || (docker logs embed-test && exit 1)
+          docker stop embed-test
+      - id: mark
+        if: success()
+        run: echo "passed=true" >> "$GITHUB_OUTPUT"
+
+  docker-build:
+    name: Docker Build
+    needs: _docker-build-self-hosted
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Route
+        run: echo "self-hosted passed=${{ needs._docker-build-self-hosted.outputs.passed }}"
+      - uses: actions/checkout@v4
+        if: needs._docker-build-self-hosted.outputs.passed != 'true'
+      - name: Build image
+        if: needs._docker-build-self-hosted.outputs.passed != 'true'
+        run: docker build -t openclaw-embeddings:test .
+      - name: Healthcheck
+        if: needs._docker-build-self-hosted.outputs.passed != 'true'
         run: |
           docker run --rm -d --name embed-test -p 8080:8080 openclaw-embeddings:test
           sleep 5
